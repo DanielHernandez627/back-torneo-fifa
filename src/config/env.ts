@@ -22,5 +22,3 @@ export const env: Env = {
 if (Number.isNaN(env.POSTGRES_PORT)) {
     throw new Error('POSTGRES_PORT must be a valid number');
 }
-
-3007897584
