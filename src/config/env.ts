@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import { Env } from '../models/env.model';
+import { Env } from '../env.model';
 
 config();
 
