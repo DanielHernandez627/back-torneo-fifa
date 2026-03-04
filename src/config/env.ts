@@ -17,6 +17,7 @@ export const env: Env = {
     POSTGRES_USER: getRequiredEnv('POSTGRES_USER'),
     POSTGRES_PASSWORD: getRequiredEnv('POSTGRES_PASSWORD'),
     POSTGRES_DB: getRequiredEnv('POSTGRES_DB'),
+    JWT_SECRET: getRequiredEnv('JWT_SECRET'),
 };
 
 if (Number.isNaN(env.POSTGRES_PORT)) {

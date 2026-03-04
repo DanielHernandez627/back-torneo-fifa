@@ -1,5 +1,5 @@
 import { Exclude } from 'class-transformer';
-import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, BeforeInsert, OneToMany} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, BeforeInsert, BeforeUpdate, OneToMany} from 'typeorm';
 import { encrypt } from '../utilities/bycrypt.handler';
 import { Tournament } from './tournaments.entity';
 
@@ -28,7 +28,11 @@ export class User {
     updatedAt!: Date;
 
     @BeforeInsert()
+    @BeforeUpdate()
     async hashPassword() {
-        this.password = await encrypt(this.password);
+        const isAlreadyHashed = this.password.startsWith('$2a$') || this.password.startsWith('$2b$') || this.password.startsWith('$2y$');
+        if (!isAlreadyHashed) {
+            this.password = await encrypt(this.password);
+        }
     }
 }
