@@ -44,5 +44,9 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "ts-node": {
+    "files": true
   }
 }
