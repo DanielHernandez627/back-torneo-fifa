@@ -1,5 +1,3 @@
-import { Tournament } from "../entities/tournaments.entity";
-
 export interface UserResponse {
 	id: number;
 	username: string;

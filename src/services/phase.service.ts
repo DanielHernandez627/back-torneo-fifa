@@ -3,6 +3,7 @@ import { Phase } from "../entities/phase.entity";
 import { Tournament } from "../entities/tournaments.entity";
 import { PhaseModel } from "../models/phase.model";
 import { DeepPartial } from "typeorm";
+import { PhaseStatus } from "../enums/phaseStatus";
 
 export class PhaseService {
     private phaseRepository = AppDataSource.getRepository(Phase);
@@ -13,6 +14,7 @@ export class PhaseService {
             id: phase.id,
             name: phase.name,
             orderNumber: phase.orderNumber,
+            status: phase.status,
             tournamentId: phase.tournament?.id,
             createdAt: phase.createdAt,
             updatedAt: phase.updatedAt,
@@ -53,6 +55,7 @@ export class PhaseService {
         const phaseData: DeepPartial<Phase> = {
             name: data.name,
             tournament,
+            status: data.status ?? PhaseStatus.SCHEDULED,
         };
 
         if (typeof data.orderNumber !== "undefined") {
@@ -79,6 +82,7 @@ export class PhaseService {
 
         if (data.name) phase.name = data.name;
         if (typeof data.orderNumber !== "undefined") phase.orderNumber = data.orderNumber;
+        if (typeof data.status !== "undefined") phase.status = data.status;
 
         if (data.tournamentId) {
             const tournament = await this.tournamentRepository.findOneBy({ id: data.tournamentId });

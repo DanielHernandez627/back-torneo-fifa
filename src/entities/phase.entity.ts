@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, ManyToOne, OneToMany } from 'typeorm';
 import { Tournament } from './tournaments.entity';
 import { Match } from './matches.entity';
+import { PhaseStatus } from '../enums/phaseStatus';
 
 @Entity({ name: 'phases' })
 export class Phase {
@@ -12,6 +13,13 @@ export class Phase {
 
     @Column({ type: 'int', nullable: true })
     orderNumber?: number;
+
+    @Column({
+        type: 'enum',
+        enum: PhaseStatus,
+        default: PhaseStatus.SCHEDULED,
+    })
+    status!: PhaseStatus;
 
     @ManyToOne(() => Tournament, tournament => tournament.phases, {
         onDelete: 'CASCADE',
