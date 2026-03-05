@@ -4,11 +4,14 @@ import { Phase } from "../entities/phase.entity";
 import { Team } from "../entities/teams.entity";
 import { MatchModel } from "../models/match.model";
 import { DeepPartial } from "typeorm";
+import { PhaseStatus } from "../enums/phaseStatus";
+import { TournamentAuthorizationService } from "./tournament-authorization.service";
 
 export class MatchService {
     private matchRepository = AppDataSource.getRepository(Match);
     private phaseRepository = AppDataSource.getRepository(Phase);
     private teamRepository = AppDataSource.getRepository(Team);
+    private authorizationService = new TournamentAuthorizationService();
 
     private toResponse(match: Match) {
         return {
@@ -20,26 +23,150 @@ export class MatchService {
             awayTeamScore: match.awayTeamScore,
             matchday: match.matchday,
             isPlayed: match.isPlayed,
+            createdAt: match.createdAt,
+            updatedAt: match.updatedAt,
         };
     }
 
-    async getAllMatches() {
-        const matches = await this.matchRepository.find({
+    private validateTeamDifference(homeTeamId: number, awayTeamId: number) {
+        if (homeTeamId === awayTeamId) {
+            throw new Error("Home team and away team must be different");
+        }
+    }
+
+    private validateScoreValues(homeTeamScore?: number, awayTeamScore?: number) {
+        const hasHome = typeof homeTeamScore !== "undefined";
+        const hasAway = typeof awayTeamScore !== "undefined";
+
+        if (hasHome !== hasAway) {
+            throw new Error("Both scores must be provided together");
+        }
+
+        if (hasHome && hasAway && (homeTeamScore < 0 || awayTeamScore < 0)) {
+            throw new Error("Scores must be greater than or equal to 0");
+        }
+    }
+
+    private resolveIsPlayed(currentIsPlayed: boolean, data: Partial<MatchModel>) {
+        if (typeof data.isPlayed !== "undefined") {
+            if (
+                data.isPlayed &&
+                (typeof data.homeTeamScore === "undefined" || typeof data.awayTeamScore === "undefined")
+            ) {
+                throw new Error("Played matches require both scores");
+            }
+            return data.isPlayed;
+        }
+
+        if (typeof data.homeTeamScore !== "undefined" && typeof data.awayTeamScore !== "undefined") {
+            return true;
+        }
+
+        return currentIsPlayed;
+    }
+
+    private async loadPhaseWithTournament(phaseId: number) {
+        const phase = await this.phaseRepository.findOne({
+            where: { id: phaseId },
             relations: {
-                phase: true,
+                tournament: {
+                    user: true,
+                },
+            },
+        });
+
+        if (!phase) {
+            throw new Error("Phase not found");
+        }
+
+        return phase;
+    }
+
+    private async loadTeamWithTournament(teamId: number, label: "Home" | "Away") {
+        const team = await this.teamRepository.findOne({
+            where: { id: teamId },
+            relations: { tournament: true },
+        });
+
+        if (!team) {
+            throw new Error(`${label} team not found`);
+        }
+
+        return team;
+    }
+
+    private ensurePhaseIsMutable(phase: Phase) {
+        if (phase.status === PhaseStatus.CLOSED) {
+            throw new Error("Cannot modify matches in a closed phase");
+        }
+    }
+
+    private ensureTeamsBelongToPhaseTournament(phase: Phase, homeTeam: Team, awayTeam: Team) {
+        const tournamentId = phase.tournament.id;
+
+        if (homeTeam.tournament.id !== tournamentId || awayTeam.tournament.id !== tournamentId) {
+            throw new Error("Teams must belong to the same tournament as the phase");
+        }
+    }
+
+    async getAllMatches(requesterUserId?: number) {
+        const options: {
+            relations: {
+                phase: {
+                    tournament: {
+                        user: true;
+                    };
+                };
+                homeTeam: true;
+                awayTeam: true;
+            };
+            where?: {
+                phase: {
+                    tournament: {
+                        user: {
+                            id: number;
+                        };
+                    };
+                };
+            };
+        } = {
+            relations: {
+                phase: {
+                    tournament: {
+                        user: true,
+                    },
+                },
                 homeTeam: true,
                 awayTeam: true,
             },
-        });
+        };
+
+        if (typeof requesterUserId !== "undefined") {
+            options.where = {
+                phase: {
+                    tournament: {
+                        user: {
+                            id: requesterUserId,
+                        },
+                    },
+                },
+            };
+        }
+
+        const matches = await this.matchRepository.find(options);
 
         return matches.map((match) => this.toResponse(match));
     }
 
-    async getMatchById(id: number) {
+    async getMatchById(id: number, requesterUserId?: number) {
         const match = await this.matchRepository.findOne({
             where: { id },
             relations: {
-                phase: true,
+                phase: {
+                    tournament: {
+                        user: true,
+                    },
+                },
                 homeTeam: true,
                 awayTeam: true,
             },
@@ -49,34 +176,36 @@ export class MatchService {
             throw new Error("Match not found");
         }
 
+        if (typeof requesterUserId !== "undefined") {
+            this.authorizationService.ensureOwnership(match.phase.tournament.user.id, requesterUserId);
+        }
+
         return this.toResponse(match);
     }
 
-    async createMatch(data: MatchModel) {
-        if (data.homeTeamId === data.awayTeamId) {
-            throw new Error("Home team and away team must be different");
+    async createMatch(data: MatchModel, requesterUserId?: number) {
+        this.validateTeamDifference(data.homeTeamId, data.awayTeamId);
+        this.validateScoreValues(data.homeTeamScore, data.awayTeamScore);
+
+        const phase = await this.loadPhaseWithTournament(data.phaseId);
+
+        if (typeof requesterUserId !== "undefined") {
+            this.authorizationService.ensureOwnership(phase.tournament.user.id, requesterUserId);
         }
 
-        const phase = await this.phaseRepository.findOneBy({ id: data.phaseId });
-        if (!phase) {
-            throw new Error("Phase not found");
-        }
+        this.ensurePhaseIsMutable(phase);
 
-        const homeTeam = await this.teamRepository.findOneBy({ id: data.homeTeamId });
-        if (!homeTeam) {
-            throw new Error("Home team not found");
-        }
+        const homeTeam = await this.loadTeamWithTournament(data.homeTeamId, "Home");
+        const awayTeam = await this.loadTeamWithTournament(data.awayTeamId, "Away");
+        this.ensureTeamsBelongToPhaseTournament(phase, homeTeam, awayTeam);
 
-        const awayTeam = await this.teamRepository.findOneBy({ id: data.awayTeamId });
-        if (!awayTeam) {
-            throw new Error("Away team not found");
-        }
+        const isPlayed = this.resolveIsPlayed(false, data);
 
         const matchData: DeepPartial<Match> = {
             phase,
             homeTeam,
             awayTeam,
-            isPlayed: data.isPlayed ?? false,
+            isPlayed,
         };
 
         if (typeof data.homeTeamScore !== "undefined") {
@@ -94,14 +223,18 @@ export class MatchService {
         const match = this.matchRepository.create(matchData);
 
         const savedMatch = await this.matchRepository.save(match);
-        return this.getMatchById(savedMatch.id);
+        return this.getMatchById(savedMatch.id, requesterUserId);
     }
 
-    async updateMatch(id: number, data: Partial<MatchModel>) {
+    async updateMatch(id: number, data: Partial<MatchModel>, requesterUserId?: number) {
         const match = await this.matchRepository.findOne({
             where: { id },
             relations: {
-                phase: true,
+                phase: {
+                    tournament: {
+                        user: true,
+                    },
+                },
                 homeTeam: true,
                 awayTeam: true,
             },
@@ -111,49 +244,87 @@ export class MatchService {
             throw new Error("Match not found");
         }
 
+        if (typeof requesterUserId !== "undefined") {
+            this.authorizationService.ensureOwnership(match.phase.tournament.user.id, requesterUserId);
+        }
+
         const nextHomeTeamId = data.homeTeamId ?? match.homeTeam.id;
         const nextAwayTeamId = data.awayTeamId ?? match.awayTeam.id;
-        if (nextHomeTeamId === nextAwayTeamId) {
-            throw new Error("Home team and away team must be different");
+        this.validateTeamDifference(nextHomeTeamId, nextAwayTeamId);
+
+        const nextHomeTeamScore =
+            typeof data.homeTeamScore !== "undefined" ? data.homeTeamScore : match.homeTeamScore;
+        const nextAwayTeamScore =
+            typeof data.awayTeamScore !== "undefined" ? data.awayTeamScore : match.awayTeamScore;
+        this.validateScoreValues(nextHomeTeamScore, nextAwayTeamScore);
+
+        const targetPhaseId = data.phaseId ?? match.phase.id;
+        const targetPhase = await this.loadPhaseWithTournament(targetPhaseId);
+
+        if (typeof requesterUserId !== "undefined") {
+            this.authorizationService.ensureOwnership(targetPhase.tournament.user.id, requesterUserId);
         }
 
-        if (data.phaseId) {
-            const phase = await this.phaseRepository.findOneBy({ id: data.phaseId });
-            if (!phase) {
-                throw new Error("Phase not found");
-            }
-            match.phase = phase;
+        this.ensurePhaseIsMutable(targetPhase);
+
+        const nextHomeTeam = await this.loadTeamWithTournament(nextHomeTeamId, "Home");
+        const nextAwayTeam = await this.loadTeamWithTournament(nextAwayTeamId, "Away");
+        this.ensureTeamsBelongToPhaseTournament(targetPhase, nextHomeTeam, nextAwayTeam);
+
+        match.phase = targetPhase;
+        match.homeTeam = nextHomeTeam;
+        match.awayTeam = nextAwayTeam;
+
+        if (typeof data.homeTeamScore !== "undefined") {
+            match.homeTeamScore = data.homeTeamScore;
+        }
+        if (typeof data.awayTeamScore !== "undefined") {
+            match.awayTeamScore = data.awayTeamScore;
+        }
+        if (typeof data.matchday !== "undefined") {
+            match.matchday = data.matchday;
         }
 
-        if (data.homeTeamId) {
-            const homeTeam = await this.teamRepository.findOneBy({ id: data.homeTeamId });
-            if (!homeTeam) {
-                throw new Error("Home team not found");
-            }
-            match.homeTeam = homeTeam;
+        const isPlayedInput: Partial<MatchModel> = {
+            ...data,
+        };
+
+        if (typeof nextHomeTeamScore !== "undefined") {
+            isPlayedInput.homeTeamScore = nextHomeTeamScore;
         }
 
-        if (data.awayTeamId) {
-            const awayTeam = await this.teamRepository.findOneBy({ id: data.awayTeamId });
-            if (!awayTeam) {
-                throw new Error("Away team not found");
-            }
-            match.awayTeam = awayTeam;
+        if (typeof nextAwayTeamScore !== "undefined") {
+            isPlayedInput.awayTeamScore = nextAwayTeamScore;
         }
 
-        if (typeof data.homeTeamScore !== "undefined") match.homeTeamScore = data.homeTeamScore;
-        if (typeof data.awayTeamScore !== "undefined") match.awayTeamScore = data.awayTeamScore;
-        if (typeof data.matchday !== "undefined") match.matchday = data.matchday;
-        if (typeof data.isPlayed !== "undefined") match.isPlayed = data.isPlayed;
+        match.isPlayed = this.resolveIsPlayed(match.isPlayed, isPlayedInput);
 
         const updatedMatch = await this.matchRepository.save(match);
-        return this.getMatchById(updatedMatch.id);
+        return this.getMatchById(updatedMatch.id, requesterUserId);
     }
 
-    async deleteMatch(id: number): Promise<void> {
-        const match = await this.matchRepository.findOneBy({ id });
+    async deleteMatch(id: number, requesterUserId?: number): Promise<void> {
+        const match = await this.matchRepository.findOne({
+            where: { id },
+            relations: {
+                phase: {
+                    tournament: {
+                        user: true,
+                    },
+                },
+            },
+        });
+
         if (!match) {
             throw new Error("Match not found");
+        }
+
+        if (typeof requesterUserId !== "undefined") {
+            this.authorizationService.ensureOwnership(match.phase.tournament.user.id, requesterUserId);
+        }
+
+        if (match.phase.status === PhaseStatus.CLOSED) {
+            throw new Error("Cannot delete matches from a closed phase");
         }
 
         await this.matchRepository.remove(match);

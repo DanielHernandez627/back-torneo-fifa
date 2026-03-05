@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, ManyToOne, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, ManyToOne } from 'typeorm';
 import { Phase } from './phase.entity';
 import { Team } from './teams.entity';
 
@@ -33,4 +33,10 @@ export class Match {
 
     @Column({ type: 'boolean', default: false })
     isPlayed!: boolean;
+
+    @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+    createdAt!: Date;
+
+    @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+    updatedAt!: Date;
 }
