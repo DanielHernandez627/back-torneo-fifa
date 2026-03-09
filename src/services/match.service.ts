@@ -18,7 +18,9 @@ export class MatchService {
             id: match.id,
             phaseId: match.phase?.id,
             homeTeamId: match.homeTeam?.id,
+            homeTeamName: match.homeTeam?.name,
             awayTeamId: match.awayTeam?.id,
+            awayTeamName: match.awayTeam?.name,
             homeTeamScore: match.homeTeamScore,
             awayTeamScore: match.awayTeamScore,
             matchday: match.matchday,
@@ -109,7 +111,15 @@ export class MatchService {
         }
     }
 
-    async getAllMatches(requesterUserId?: number) {
+    async getAllMatches(params?: {
+        requesterUserId?: number;
+        phaseId?: number;
+        groupByMatchday?: boolean;
+    }) {
+        const requesterUserId = params?.requesterUserId;
+        const phaseId = params?.phaseId;
+        const groupByMatchday = params?.groupByMatchday ?? true;
+
         const options: {
             relations: {
                 phase: {
@@ -154,8 +164,60 @@ export class MatchService {
         }
 
         const matches = await this.matchRepository.find(options);
+        const filteredMatches =
+            typeof phaseId !== "undefined" ? matches.filter((match) => match.phase?.id === phaseId) : matches;
+        const serializedMatches = filteredMatches
+            .map((match) => this.toResponse(match))
+            .sort((a, b) => {
+                const matchdayA = a.matchday ?? Number.MAX_SAFE_INTEGER;
+                const matchdayB = b.matchday ?? Number.MAX_SAFE_INTEGER;
+                if (matchdayA !== matchdayB) {
+                    return matchdayA - matchdayB;
+                }
 
-        return matches.map((match) => this.toResponse(match));
+                return a.id - b.id;
+            });
+
+        if (!groupByMatchday) {
+            return serializedMatches;
+        }
+
+        const groupedByMatchday = serializedMatches.reduce<
+            Array<{
+                matchday: number | null;
+                totalMatches: number;
+                matches: ReturnType<MatchService["toResponse"]>[];
+            }>
+        >((accumulator, match) => {
+            const key = typeof match.matchday === "number" ? match.matchday : null;
+            const group = accumulator.find((item) => item.matchday === key);
+
+            if (group) {
+                group.matches.push(match);
+                group.totalMatches = group.matches.length;
+                return accumulator;
+            }
+
+            accumulator.push({
+                matchday: key,
+                totalMatches: 1,
+                matches: [match],
+            });
+
+            return accumulator;
+        }, []);
+
+        groupedByMatchday.sort((a, b) => {
+            const matchdayA = a.matchday ?? Number.MAX_SAFE_INTEGER;
+            const matchdayB = b.matchday ?? Number.MAX_SAFE_INTEGER;
+            return matchdayA - matchdayB;
+        });
+
+        return {
+            totalMatches: serializedMatches.length,
+            totalMatchdays: groupedByMatchday.length,
+            matchdays: groupedByMatchday,
+        };
     }
 
     async getMatchById(id: number, requesterUserId?: number) {

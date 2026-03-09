@@ -23,7 +23,34 @@ export class MatchController {
     getAllMatches = async (req: Request, res: Response) => {
         try {
             const requesterUserId = this.getAuthenticatedUserId(req);
-            const matches = await this.matchService.getAllMatches(requesterUserId);
+            const phaseIdRaw = req.query.phaseId;
+            const groupByMatchdayRaw = req.query.groupByMatchday;
+
+            let phaseId: number | undefined;
+            if (typeof phaseIdRaw === "string") {
+                const parsedPhaseId = parseInt(phaseIdRaw, 10);
+                if (!Number.isNaN(parsedPhaseId)) {
+                    phaseId = parsedPhaseId;
+                }
+            }
+
+            const groupByMatchday =
+                typeof groupByMatchdayRaw === "string" ? groupByMatchdayRaw.toLowerCase() !== "false" : true;
+
+            const queryParams: {
+                requesterUserId: number;
+                phaseId?: number;
+                groupByMatchday: boolean;
+            } = {
+                requesterUserId,
+                groupByMatchday,
+            };
+
+            if (typeof phaseId !== "undefined") {
+                queryParams.phaseId = phaseId;
+            }
+
+            const matches = await this.matchService.getAllMatches(queryParams);
             res.json(matches);
         } catch (error) {
             errorHandler(res, 400, error);

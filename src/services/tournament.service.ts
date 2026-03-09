@@ -2,6 +2,7 @@ import { AppDataSource } from "../config/database";
 import { Team } from "../entities/teams.entity";
 import { Tournament } from "../entities/tournaments.entity";
 import { User } from "../entities/user.entity";
+import { Phase } from "../entities/phase.entity";
 import {
     AdvanceToNextPhaseCommand,
     ClosePhaseCommand,
@@ -18,6 +19,7 @@ import { MatchResultService } from "./match-result.service";
 import { PhaseLifecycleService } from "./phase-lifecycle.service";
 import { StandingsService } from "./standings.service";
 import { PhaseStatus } from "../enums/phaseStatus";
+import { TournamentType } from "../enums/tournamentType";
 
 export class TournamentService {
     private tournamentRepository = AppDataSource.getRepository(Tournament);
@@ -29,6 +31,22 @@ export class TournamentService {
     private matchResultService = new MatchResultService();
     private phaseLifecycleService = new PhaseLifecycleService();
     private standingsService = new StandingsService();
+
+    private buildDefaultPhases(type: TournamentType) {
+        if (type === TournamentType.MIXED) {
+            return [
+                { name: "Liga", orderNumber: 1 },
+                { name: "Cuadrangular", orderNumber: 2 },
+                { name: "Final", orderNumber: 3 },
+            ];
+        }
+
+        if (type === TournamentType.LEAGUE) {
+            return [{ name: "Liga", orderNumber: 1 }];
+        }
+
+        return [{ name: "Cuadrangular", orderNumber: 1 }];
+    }
 
     private toResponse(tournament: Tournament) {
         return {
@@ -91,33 +109,55 @@ export class TournamentService {
 
     async createTournament(data: TournamentModel, requesterUserId?: number) {
         const ownerUserId = typeof requesterUserId !== "undefined" ? requesterUserId : data.userId;
-        const user = await this.userRepository.findOneBy({ id: ownerUserId });
-        if (!user) {
-            throw new Error("User not found");
-        }
 
-        let champion: Team | undefined;
-        if (data.championId) {
-            const championTeam = await this.teamRepository.findOneBy({ id: data.championId });
-            if (!championTeam) {
-                throw new Error("Champion team not found");
+        const savedTournament = await AppDataSource.transaction(async (manager) => {
+            const txUserRepository = manager.getRepository(User);
+            const txTeamRepository = manager.getRepository(Team);
+            const txTournamentRepository = manager.getRepository(Tournament);
+            const txPhaseRepository = manager.getRepository(Phase);
+
+            const user = await txUserRepository.findOneBy({ id: ownerUserId });
+            if (!user) {
+                throw new Error("User not found");
             }
-            champion = championTeam;
-        }
 
-        const tournamentData: DeepPartial<Tournament> = {
-            name: data.name,
-            type: data.type,
-            user,
-        };
+            let champion: Team | undefined;
+            if (data.championId) {
+                const championTeam = await txTeamRepository.findOneBy({ id: data.championId });
+                if (!championTeam) {
+                    throw new Error("Champion team not found");
+                }
+                champion = championTeam;
+            }
 
-        if (champion) {
-            tournamentData.champion = champion;
-        }
+            const tournamentData: DeepPartial<Tournament> = {
+                name: data.name,
+                type: data.type,
+                user,
+            };
 
-        const tournament = this.tournamentRepository.create(tournamentData);
+            if (champion) {
+                tournamentData.champion = champion;
+            }
 
-        const savedTournament = await this.tournamentRepository.save(tournament);
+            const tournament = txTournamentRepository.create(tournamentData);
+            const createdTournament = await txTournamentRepository.save(tournament);
+
+            const defaultPhases = this.buildDefaultPhases(data.type);
+            const phaseEntities = defaultPhases.map((phaseConfig) =>
+                txPhaseRepository.create({
+                    name: phaseConfig.name,
+                    orderNumber: phaseConfig.orderNumber,
+                    status: PhaseStatus.SCHEDULED,
+                    tournament: createdTournament,
+                }),
+            );
+
+            await txPhaseRepository.save(phaseEntities);
+
+            return createdTournament;
+        });
+
         return this.getTournamentById(savedTournament.id, requesterUserId);
     }
 

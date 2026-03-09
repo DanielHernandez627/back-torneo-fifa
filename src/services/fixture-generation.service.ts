@@ -83,13 +83,23 @@ export class FixtureGenerationService {
             const txPhaseRepository = manager.getRepository(Phase);
             const txMatchRepository = manager.getRepository(Match);
 
-            const tournament = await txTournamentRepository
+            const lockedTournament = await txTournamentRepository
                 .createQueryBuilder("tournament")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("tournament.user", "user")
-                .leftJoinAndSelect("tournament.teams", "teams")
                 .where("tournament.id = :tournamentId", { tournamentId })
                 .getOne();
+
+            if (!lockedTournament) {
+                throw new Error("Tournament not found");
+            }
+
+            const tournament = await txTournamentRepository.findOne({
+                where: { id: tournamentId },
+                relations: {
+                    user: true,
+                    teams: true,
+                },
+            });
 
             if (!tournament) {
                 throw new Error("Tournament not found");
@@ -97,15 +107,26 @@ export class FixtureGenerationService {
 
             this.authorizationService.ensureOwnership(tournament.user.id, requesterUserId);
 
-            const phase = await txPhaseRepository
+            const lockedPhase = await txPhaseRepository
                 .createQueryBuilder("phase")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("phase.tournament", "phaseTournament")
-                .leftJoinAndSelect("phase.matches", "matches")
-                .leftJoinAndSelect("matches.homeTeam", "homeTeam")
-                .leftJoinAndSelect("matches.awayTeam", "awayTeam")
                 .where("phase.id = :phaseId", { phaseId })
                 .getOne();
+
+            if (!lockedPhase) {
+                throw new Error("Phase not found");
+            }
+
+            const phase = await txPhaseRepository.findOne({
+                where: { id: phaseId },
+                relations: {
+                    tournament: true,
+                    matches: {
+                        homeTeam: true,
+                        awayTeam: true,
+                    },
+                },
+            });
 
             if (!phase) {
                 throw new Error("Phase not found");
@@ -203,13 +224,23 @@ export class FixtureGenerationService {
             const txPhaseRepository = manager.getRepository(Phase);
             const txMatchRepository = manager.getRepository(Match);
 
-            const tournament = await txTournamentRepository
+            const lockedTournament = await txTournamentRepository
                 .createQueryBuilder("tournament")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("tournament.user", "user")
-                .leftJoinAndSelect("tournament.teams", "teams")
                 .where("tournament.id = :tournamentId", { tournamentId })
                 .getOne();
+
+            if (!lockedTournament) {
+                throw new Error("Tournament not found");
+            }
+
+            const tournament = await txTournamentRepository.findOne({
+                where: { id: tournamentId },
+                relations: {
+                    user: true,
+                    teams: true,
+                },
+            });
 
             if (!tournament) {
                 throw new Error("Tournament not found");
@@ -217,25 +248,43 @@ export class FixtureGenerationService {
 
             this.authorizationService.ensureOwnership(tournament.user.id, requesterUserId);
 
-            const sourcePhase = await txPhaseRepository
+            const lockedSourcePhase = await txPhaseRepository
                 .createQueryBuilder("phase")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("phase.tournament", "phaseTournament")
-                .leftJoinAndSelect("phase.matches", "matches")
-                .leftJoinAndSelect("matches.homeTeam", "homeTeam")
-                .leftJoinAndSelect("matches.awayTeam", "awayTeam")
                 .where("phase.id = :sourcePhaseId", { sourcePhaseId })
                 .getOne();
 
-            const targetPhase = await txPhaseRepository
+            const lockedTargetPhase = await txPhaseRepository
                 .createQueryBuilder("phase")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("phase.tournament", "phaseTournament")
-                .leftJoinAndSelect("phase.matches", "matches")
-                .leftJoinAndSelect("matches.homeTeam", "homeTeam")
-                .leftJoinAndSelect("matches.awayTeam", "awayTeam")
                 .where("phase.id = :targetPhaseId", { targetPhaseId })
                 .getOne();
+
+            if (!lockedSourcePhase || !lockedTargetPhase) {
+                throw new Error("Phase not found");
+            }
+
+            const sourcePhase = await txPhaseRepository.findOne({
+                where: { id: sourcePhaseId },
+                relations: {
+                    tournament: true,
+                    matches: {
+                        homeTeam: true,
+                        awayTeam: true,
+                    },
+                },
+            });
+
+            const targetPhase = await txPhaseRepository.findOne({
+                where: { id: targetPhaseId },
+                relations: {
+                    tournament: true,
+                    matches: {
+                        homeTeam: true,
+                        awayTeam: true,
+                    },
+                },
+            });
 
             if (!sourcePhase || !targetPhase) {
                 throw new Error("Phase not found");
@@ -335,13 +384,23 @@ export class FixtureGenerationService {
             const txPhaseRepository = manager.getRepository(Phase);
             const txMatchRepository = manager.getRepository(Match);
 
-            const tournament = await txTournamentRepository
+            const lockedTournament = await txTournamentRepository
                 .createQueryBuilder("tournament")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("tournament.user", "user")
-                .leftJoinAndSelect("tournament.teams", "teams")
                 .where("tournament.id = :tournamentId", { tournamentId })
                 .getOne();
+
+            if (!lockedTournament) {
+                throw new Error("Tournament not found");
+            }
+
+            const tournament = await txTournamentRepository.findOne({
+                where: { id: tournamentId },
+                relations: {
+                    user: true,
+                    teams: true,
+                },
+            });
 
             if (!tournament) {
                 throw new Error("Tournament not found");
@@ -349,25 +408,43 @@ export class FixtureGenerationService {
 
             this.authorizationService.ensureOwnership(tournament.user.id, requesterUserId);
 
-            const sourcePhase = await txPhaseRepository
+            const lockedSourcePhase = await txPhaseRepository
                 .createQueryBuilder("phase")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("phase.tournament", "phaseTournament")
-                .leftJoinAndSelect("phase.matches", "matches")
-                .leftJoinAndSelect("matches.homeTeam", "homeTeam")
-                .leftJoinAndSelect("matches.awayTeam", "awayTeam")
                 .where("phase.id = :sourcePhaseId", { sourcePhaseId })
                 .getOne();
 
-            const targetPhase = await txPhaseRepository
+            const lockedTargetPhase = await txPhaseRepository
                 .createQueryBuilder("phase")
                 .setLock("pessimistic_write")
-                .leftJoinAndSelect("phase.tournament", "phaseTournament")
-                .leftJoinAndSelect("phase.matches", "matches")
-                .leftJoinAndSelect("matches.homeTeam", "homeTeam")
-                .leftJoinAndSelect("matches.awayTeam", "awayTeam")
                 .where("phase.id = :targetPhaseId", { targetPhaseId })
                 .getOne();
+
+            if (!lockedSourcePhase || !lockedTargetPhase) {
+                throw new Error("Phase not found");
+            }
+
+            const sourcePhase = await txPhaseRepository.findOne({
+                where: { id: sourcePhaseId },
+                relations: {
+                    tournament: true,
+                    matches: {
+                        homeTeam: true,
+                        awayTeam: true,
+                    },
+                },
+            });
+
+            const targetPhase = await txPhaseRepository.findOne({
+                where: { id: targetPhaseId },
+                relations: {
+                    tournament: true,
+                    matches: {
+                        homeTeam: true,
+                        awayTeam: true,
+                    },
+                },
+            });
 
             if (!sourcePhase || !targetPhase) {
                 throw new Error("Phase not found");

@@ -2,23 +2,97 @@ import { AppDataSource } from "../config/database";
 import { Phase } from "../entities/phase.entity";
 import { Tournament } from "../entities/tournaments.entity";
 import { PhaseStatus } from "../enums/phaseStatus";
+import { TournamentType } from "../enums/tournamentType";
 import { AdvanceToNextPhaseCommand, ClosePhaseCommand, PhaseSummary } from "../models/tournament-engine";
+import { FixtureGenerationService } from "./fixture-generation.service";
 import { TournamentAuthorizationService } from "./tournament-authorization.service";
 
 export class PhaseLifecycleService {
     private authorizationService = new TournamentAuthorizationService();
+    private fixtureGenerationService = new FixtureGenerationService();
+
+    private async maybeGenerateFixtureForPhase(params: {
+        tournamentId: number;
+        tournamentType: TournamentType;
+        requesterUserId: number;
+        closedPhaseId: number | null;
+        nextPhase: PhaseSummary;
+    }) {
+        const { tournamentId, tournamentType, requesterUserId, closedPhaseId, nextPhase } = params;
+
+        if (nextPhase.totalMatches > 0) {
+            return null;
+        }
+
+        const normalizedPhaseName = nextPhase.name.trim().toLowerCase();
+        const phaseOrder = nextPhase.orderNumber;
+        const isLeaguePhase = normalizedPhaseName.includes("liga");
+        const isQuadrangularPhase = normalizedPhaseName.includes("cuadrangular");
+        const isFinalPhase = normalizedPhaseName.includes("final");
+        const shouldGenerateLeague = phaseOrder === 1 || isLeaguePhase;
+        const shouldGenerateQuadrangular = phaseOrder === 2 || isQuadrangularPhase;
+        const shouldGenerateFinal = phaseOrder === 3 || isFinalPhase;
+
+        if (
+            (tournamentType === TournamentType.LEAGUE || tournamentType === TournamentType.MIXED) &&
+            shouldGenerateLeague
+        ) {
+            return this.fixtureGenerationService.generateLeagueFixture(
+                {
+                    tournamentId,
+                    phaseId: nextPhase.phaseId,
+                    doubleRound: true,
+                },
+                requesterUserId,
+            );
+        }
+
+        if (tournamentType !== TournamentType.MIXED || closedPhaseId === null) {
+            return null;
+        }
+
+        if (shouldGenerateQuadrangular) {
+            return this.fixtureGenerationService.generateQuadrangular(
+                {
+                    tournamentId,
+                    sourcePhaseId: closedPhaseId,
+                    targetPhaseId: nextPhase.phaseId,
+                },
+                requesterUserId,
+            );
+        }
+
+        if (shouldGenerateFinal) {
+            return this.fixtureGenerationService.generateFinal(
+                {
+                    tournamentId,
+                    sourcePhaseId: closedPhaseId,
+                    targetPhaseId: nextPhase.phaseId,
+                },
+                requesterUserId,
+            );
+        }
+
+        return null;
+    }
 
     private toPhaseSummary(phase: Phase): PhaseSummary {
         const totalMatches = phase.matches?.length ?? 0;
         const playedMatches = phase.matches?.filter((match) => match.isPlayed).length ?? 0;
 
-        return {
+        const summary: PhaseSummary = {
             phaseId: phase.id,
             name: phase.name,
             status: phase.status,
             totalMatches,
             playedMatches,
         };
+
+        if (typeof phase.orderNumber !== "undefined") {
+            summary.orderNumber = phase.orderNumber;
+        }
+
+        return summary;
     }
 
     async closePhase(command: ClosePhaseCommand, requesterUserId: number) {
@@ -75,7 +149,7 @@ export class PhaseLifecycleService {
 
         await this.authorizationService.ensureTournamentOwner(tournamentId, requesterUserId);
 
-        return AppDataSource.transaction(async (manager) => {
+        const advanceResult = await AppDataSource.transaction(async (manager) => {
             const txTournamentRepository = manager.getRepository(Tournament);
             const txPhaseRepository = manager.getRepository(Phase);
 
@@ -125,6 +199,7 @@ export class PhaseLifecycleService {
             if (!nextPhase) {
                 return {
                     tournamentId,
+                    tournamentType: tournament.type,
                     advanced: false,
                     closedPhase: currentPhase ? this.toPhaseSummary(currentPhase) : null,
                     nextPhase: null,
@@ -139,10 +214,32 @@ export class PhaseLifecycleService {
 
             return {
                 tournamentId,
+                tournamentType: tournament.type,
                 advanced: true,
                 closedPhase: currentPhase ? this.toPhaseSummary(currentPhase) : null,
                 nextPhase: this.toPhaseSummary(nextPhase),
             };
         });
+
+        if (!advanceResult.advanced || !advanceResult.nextPhase) {
+            return advanceResult;
+        }
+
+        const fixture = await this.maybeGenerateFixtureForPhase({
+            tournamentId: advanceResult.tournamentId,
+            tournamentType: advanceResult.tournamentType,
+            requesterUserId,
+            closedPhaseId: advanceResult.closedPhase?.phaseId ?? null,
+            nextPhase: advanceResult.nextPhase,
+        });
+
+        if (!fixture) {
+            return advanceResult;
+        }
+
+        return {
+            ...advanceResult,
+            fixture,
+        };
     }
 }
