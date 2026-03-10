@@ -185,6 +185,27 @@ export class TournamentController {
         }
     };
 
+    getTournamentStats = async (req: Request<{ id: string }>, res: Response) => {
+        try {
+            const requesterUserId = this.getAuthenticatedUserId(req);
+            const tournamentId = this.parseId(req.params.id, "tournamentId");
+            const response = await this.tournamentService.getTournamentStats(tournamentId, requesterUserId);
+            res.json(response);
+        } catch (error) {
+            errorHandler(res, 400, error);
+        }
+    };
+
+    getMyTournamentsStats = async (req: Request, res: Response) => {
+        try {
+            const requesterUserId = this.getAuthenticatedUserId(req);
+            const response = await this.tournamentService.getMyTournamentsStats(requesterUserId);
+            res.json(response);
+        } catch (error) {
+            errorHandler(res, 400, error);
+        }
+    };
+
     closePhase = async (req: Request<{ phaseId: string }>, res: Response) => {
         try {
             const requesterUserId = this.getAuthenticatedUserId(req);

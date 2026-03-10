@@ -34,6 +34,18 @@ const tournamentController = new TournamentController();
  *         description: Torneo creado
  *       400:
  *         description: Datos inválidos
+ * /tournaments/stats:
+ *   get:
+ *     tags:
+ *       - Tournaments
+ *     summary: Obtener estadísticas de todos los torneos del usuario autenticado
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de estadísticas por torneo
+ *       400:
+ *         description: Solicitud inválida
  */
 
 /**
@@ -116,6 +128,24 @@ const tournamentController = new TournamentController();
  *     responses:
  *       200:
  *         description: Posiciones del torneo
+ *       400:
+ *         description: Solicitud inválida
+ * /tournaments/{id}/stats:
+ *   get:
+ *     tags:
+ *       - Tournaments
+ *     summary: Obtener estadísticas rápidas de un torneo
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Totales de equipos, fases y partidos
  *       400:
  *         description: Solicitud inválida
  */
@@ -286,8 +316,10 @@ const tournamentController = new TournamentController();
  */
 
 tournamentsRouter.get("/", checkJwt, tournamentController.getAllTournaments);
+tournamentsRouter.get("/stats", checkJwt, tournamentController.getMyTournamentsStats);
 tournamentsRouter.get("/:id", checkJwt, tournamentController.getTournamentById);
 tournamentsRouter.get("/:id/standings", checkJwt, tournamentController.getStandings);
+tournamentsRouter.get("/:id/stats", checkJwt, tournamentController.getTournamentStats);
 tournamentsRouter.post("/", checkJwt, tournamentController.createTournament);
 tournamentsRouter.post("/:id/fixtures/league", checkJwt, tournamentController.generateLeagueFixture);
 tournamentsRouter.post("/:id/fixtures/quadrangular", checkJwt, tournamentController.generateQuadrangular);

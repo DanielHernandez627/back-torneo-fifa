@@ -1,15 +1,67 @@
 import { AppDataSource } from "../config/database";
 import { Phase } from "../entities/phase.entity";
+import { Team } from "../entities/teams.entity";
 import { Tournament } from "../entities/tournaments.entity";
 import { PhaseStatus } from "../enums/phaseStatus";
 import { TournamentType } from "../enums/tournamentType";
 import { AdvanceToNextPhaseCommand, ClosePhaseCommand, PhaseSummary } from "../models/tournament-engine";
 import { FixtureGenerationService } from "./fixture-generation.service";
+import { StandingsService } from "./standings.service";
 import { TournamentAuthorizationService } from "./tournament-authorization.service";
 
 export class PhaseLifecycleService {
     private authorizationService = new TournamentAuthorizationService();
     private fixtureGenerationService = new FixtureGenerationService();
+    private standingsService = new StandingsService();
+
+    private isLastTournamentPhase(phaseId: number, phases: Phase[]) {
+        const orderedPhases = [...phases].sort((a, b) => {
+            const orderA = a.orderNumber ?? Number.MAX_SAFE_INTEGER;
+            const orderB = b.orderNumber ?? Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+
+            return a.id - b.id;
+        });
+
+        const lastPhase = orderedPhases[orderedPhases.length - 1];
+        return lastPhase?.id === phaseId;
+    }
+
+    private resolveChampionFromPhaseMatches(phase: Phase) {
+        const participantsById = new Map<number, Team>();
+
+        phase.matches.forEach((match) => {
+            participantsById.set(match.homeTeam.id, match.homeTeam);
+            participantsById.set(match.awayTeam.id, match.awayTeam);
+        });
+
+        const participantTeams = Array.from(participantsById.values());
+        const standings = this.standingsService.buildStandingsRows(participantTeams, phase.matches);
+
+        if (standings.length === 0) {
+            return undefined;
+        }
+
+        const leader = standings[0];
+        if (!leader) {
+            return undefined;
+        }
+
+        const tiedLeaders = standings.filter(
+            (row) =>
+                row.points === leader.points &&
+                row.goalDifference === leader.goalDifference &&
+                row.goalsFor === leader.goalsFor,
+        );
+
+        if (tiedLeaders.length !== 1) {
+            return undefined;
+        }
+
+        return participantsById.get(leader.teamId);
+    }
 
     private async maybeGenerateFixtureForPhase(params: {
         tournamentId: number;
@@ -100,13 +152,18 @@ export class PhaseLifecycleService {
 
         return AppDataSource.transaction(async (manager) => {
             const txPhaseRepository = manager.getRepository(Phase);
+            const txTournamentRepository = manager.getRepository(Tournament);
             const phase = await txPhaseRepository.findOne({
                 where: { id: phaseId },
                 relations: {
                     tournament: {
                         user: true,
+                        phases: true,
                     },
-                    matches: true,
+                    matches: {
+                        homeTeam: true,
+                        awayTeam: true,
+                    },
                 },
             });
 
@@ -137,8 +194,21 @@ export class PhaseLifecycleService {
             phase.status = PhaseStatus.CLOSED;
             const savedPhase = await txPhaseRepository.save(phase);
 
+            let championId: number | undefined;
+            const shouldResolveChampion = this.isLastTournamentPhase(savedPhase.id, phase.tournament.phases);
+            if (shouldResolveChampion) {
+                const champion = this.resolveChampionFromPhaseMatches(phase);
+
+                if (champion) {
+                    phase.tournament.champion = champion;
+                    const savedTournament = await txTournamentRepository.save(phase.tournament);
+                    championId = savedTournament.champion?.id;
+                }
+            }
+
             return {
                 tournamentId: savedPhase.tournament.id,
+                championId,
                 ...this.toPhaseSummary(savedPhase),
             };
         });

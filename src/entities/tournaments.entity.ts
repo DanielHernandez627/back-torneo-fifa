@@ -31,7 +31,7 @@ export class Tournament {
     phases!: Phase[];
 
     @ManyToOne(() => Team, { nullable: true })
-    champion?: Team;
+    champion?: Team | null;
 
     @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
     createdAt!: Date;

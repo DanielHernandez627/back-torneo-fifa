@@ -23,8 +23,6 @@ import { TournamentType } from "../enums/tournamentType";
 
 export class TournamentService {
     private tournamentRepository = AppDataSource.getRepository(Tournament);
-    private userRepository = AppDataSource.getRepository(User);
-    private teamRepository = AppDataSource.getRepository(Team);
 
     private authorizationService = new TournamentAuthorizationService();
     private fixtureGenerationService = new FixtureGenerationService();
@@ -166,39 +164,81 @@ export class TournamentService {
             await this.authorizationService.ensureTournamentOwner(id, requesterUserId);
         }
 
-        const tournament = await this.tournamentRepository.findOne({
-            where: { id },
-            relations: {
-                user: true,
-                champion: true,
-            },
+        if (typeof data.userId !== "undefined") {
+            throw new Error("Updating tournament owner is not allowed");
+        }
+
+        if (typeof data.championId !== "undefined") {
+            throw new Error("Updating champion manually is not allowed");
+        }
+
+        const updatedTournamentId = await AppDataSource.transaction(async (manager) => {
+            const txTournamentRepository = manager.getRepository(Tournament);
+            const txPhaseRepository = manager.getRepository(Phase);
+
+            const tournament = await txTournamentRepository.findOne({
+                where: { id },
+                relations: {
+                    user: true,
+                    champion: true,
+                    phases: {
+                        matches: true,
+                    },
+                },
+            });
+
+            if (!tournament) {
+                throw new Error("Tournament not found");
+            }
+
+            if (typeof data.name !== "undefined") {
+                const normalizedName = data.name.trim();
+                if (!normalizedName) {
+                    throw new Error("Tournament name cannot be empty");
+                }
+
+                tournament.name = normalizedName;
+            }
+
+            const shouldChangeType = typeof data.type !== "undefined" && data.type !== tournament.type;
+
+            if (shouldChangeType) {
+                const nextType = data.type as TournamentType;
+                const hasPlayedMatches = tournament.phases.some((phase) =>
+                    phase.matches.some((match) => match.isPlayed),
+                );
+
+                if (hasPlayedMatches) {
+                    throw new Error("Cannot change tournament type after match results have been registered");
+                }
+
+                tournament.type = nextType;
+                tournament.champion = null;
+                const savedTournament = await txTournamentRepository.save(tournament);
+
+                if (tournament.phases.length > 0) {
+                    await txPhaseRepository.remove(tournament.phases);
+                }
+
+                const defaultPhases = this.buildDefaultPhases(nextType);
+                const phaseEntities = defaultPhases.map((phaseConfig) =>
+                    txPhaseRepository.create({
+                        name: phaseConfig.name,
+                        orderNumber: phaseConfig.orderNumber,
+                        status: PhaseStatus.SCHEDULED,
+                        tournament: savedTournament,
+                    }),
+                );
+
+                await txPhaseRepository.save(phaseEntities);
+            } else {
+                await txTournamentRepository.save(tournament);
+            }
+
+            return tournament.id;
         });
 
-        if (!tournament) {
-            throw new Error("Tournament not found");
-        }
-
-        if (data.name) tournament.name = data.name;
-        if (data.type) tournament.type = data.type;
-
-        if (data.userId) {
-            const user = await this.userRepository.findOneBy({ id: data.userId });
-            if (!user) {
-                throw new Error("User not found");
-            }
-            tournament.user = user;
-        }
-
-        if (data.championId) {
-            const champion = await this.teamRepository.findOneBy({ id: data.championId });
-            if (!champion) {
-                throw new Error("Champion team not found");
-            }
-            tournament.champion = champion;
-        }
-
-        const updatedTournament = await this.tournamentRepository.save(tournament);
-        return this.getTournamentById(updatedTournament.id, requesterUserId);
+        return this.getTournamentById(updatedTournamentId, requesterUserId);
     }
 
     async deleteTournament(id: number, requesterUserId?: number): Promise<void> {
@@ -293,6 +333,76 @@ export class TournamentService {
             phaseStatus: targetPhase.status,
             standings,
         };
+    }
+
+    async getTournamentStats(tournamentId: number, requesterUserId?: number) {
+        if (typeof requesterUserId !== "undefined") {
+            await this.authorizationService.ensureTournamentOwner(tournamentId, requesterUserId);
+        }
+
+        const tournament = await this.tournamentRepository.findOne({
+            where: { id: tournamentId },
+            relations: {
+                teams: true,
+                phases: {
+                    matches: true,
+                },
+            },
+        });
+
+        if (!tournament) {
+            throw new Error("Tournament not found");
+        }
+
+        const totalTeams = tournament.teams.length;
+        const totalPhases = tournament.phases.length;
+        const totalMatches = tournament.phases.reduce((accumulator, phase) => accumulator + phase.matches.length, 0);
+
+        return {
+            tournamentId,
+            totalTeams,
+            totalPhases,
+            totalMatches,
+        };
+    }
+
+    async getMyTournamentsStats(requesterUserId: number) {
+        const tournaments = await this.tournamentRepository.find({
+            where: {
+                user: {
+                    id: requesterUserId,
+                },
+            },
+            relations: {
+                teams: true,
+                phases: {
+                    matches: true,
+                },
+            },
+            order: {
+                createdAt: "DESC",
+            },
+        });
+
+        return tournaments.map((tournament) => {
+            const totalTeams = tournament.teams.length;
+            const totalPhases = tournament.phases.length;
+            const totalMatches = tournament.phases.reduce(
+                (accumulator, phase) => accumulator + phase.matches.length,
+                0,
+            );
+
+            return {
+                tournamentId: tournament.id,
+                name: tournament.name,
+                type: tournament.type,
+                totalTeams,
+                totalPhases,
+                totalMatches,
+                createdAt: tournament.createdAt,
+                updatedAt: tournament.updatedAt,
+            };
+        });
     }
 
     async closePhase(command: ClosePhaseCommand, requesterUserId: number) {
