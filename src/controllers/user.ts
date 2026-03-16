@@ -6,6 +6,20 @@ import { User as UserModel } from "../models/user.model";
 export class UserController {
     private userService = new UserService();
 
+    checkUsernameAvailability = async (req: Request<{}, {}, {}, { username?: string }>, res: Response) => {
+        try {
+            const username = req.query.username?.trim();
+            if (!username) {
+                throw new Error("username query param is required");
+            }
+
+            const available = await this.userService.isUsernameAvailable(username);
+            res.json({ username, available });
+        } catch (error) {
+            errorHandler(res, 400, error);
+        }
+    };
+
     getUserById = async ( req: Request<{ id: string }>, res: Response) => {
         try {
             const id = parseInt(req.params.id);

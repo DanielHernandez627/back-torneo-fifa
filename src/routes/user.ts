@@ -35,6 +35,26 @@ const userController = new UserController();
 
 /**
  * @openapi
+ * /user/availability/username:
+ *   get:
+ *     tags:
+ *       - User
+ *     summary: Verificar disponibilidad de username
+ *     parameters:
+ *       - in: query
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Disponibilidad obtenida correctamente
+ *       400:
+ *         description: Parámetros inválidos
+ */
+
+/**
+ * @openapi
  * /user/{id}:
  *   get:
  *     tags:
@@ -95,6 +115,7 @@ const userController = new UserController();
  *         description: Usuario no encontrado
  */
 
+userRouter.get("/availability/username", userController.checkUsernameAvailability);
 userRouter.get("/:id", checkJwt, userController.getUserById);
 userRouter.post("/", userController.createUser);
 userRouter.put("/:id", checkJwt, userController.updateUser);

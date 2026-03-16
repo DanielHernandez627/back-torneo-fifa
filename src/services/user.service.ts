@@ -70,4 +70,14 @@ export class UserService {
         const count = await this.userRepository.count({ where: whereConditions });
         return count > 0;
     }
+
+    async isUsernameAvailable(username: string): Promise<boolean> {
+        const normalizedUsername = username.trim();
+        if (!normalizedUsername) {
+            throw new Error("Username is required");
+        }
+
+        const exists = await this.userRepository.exists({ where: { username: normalizedUsername } });
+        return !exists;
+    }
 }
