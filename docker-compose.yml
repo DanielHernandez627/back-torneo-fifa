@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:16
     container_name: fifa_postgres
-    restart: always
+    restart: no
     environment:
       POSTGRES_USER: fifa_user
       POSTGRES_PASSWORD: fifa_password
