@@ -22,9 +22,7 @@ const userController = new UserController();
  *               email:
  *                 type: string
  *                 format: email
- *               password:
- *                 type: string
- *               name:
+ *               username:
  *                 type: string
  *     responses:
  *       201:

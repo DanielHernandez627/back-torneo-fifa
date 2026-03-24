@@ -11,6 +11,9 @@ export class UserService {
             id: user.id,
             username: user.username,
             email: user.email,
+            firebaseUid: user.firebaseUid,
+            provider: user.provider,
+            isVerified: user.isVerified,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
         };
@@ -30,10 +33,13 @@ export class UserService {
     }
 
     async createUser(userData: UserModel): Promise<UserResponse> {
+        const normalizedEmail = userData.email.trim().toLowerCase();
         const userEntity = this.userRepository.create({
-            email: userData.email,
-            password: userData.password,
+            email: normalizedEmail,
             username: userData.username,
+            provider: null,
+            firebaseUid: null,
+            isVerified: false,
         });
         const savedUser = await this.userRepository.save(userEntity);
         return this.toUserResponse(savedUser);
@@ -44,8 +50,7 @@ export class UserService {
         if (!user) {
             throw new Error("User not found");
         }
-        if (userData.email) user.email = userData.email;
-        if (userData.password) user.password = userData.password;
+        if (userData.email) user.email = userData.email.trim().toLowerCase();
         if (userData.username) user.username = userData.username;
 
         const updatedUser = await this.userRepository.save(user);

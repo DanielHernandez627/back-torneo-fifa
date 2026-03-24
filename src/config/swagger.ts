@@ -26,18 +26,32 @@ const swaggerOptions = {
 				},
 			},
 			schemas: {
+					AuthRegisterRequest: {
+						type: "object",
+						required: ["username"],
+						properties: {
+							username: { type: "string", example: "fifa_master" },
+						},
+					},
 					AuthLoginRequest: {
 						type: "object",
-						required: ["email", "password"],
-						properties: {
-							email: { type: "string", format: "email", example: "user@mail.com" },
-							password: { type: "string", example: "123456" },
-						},
+						description: "No request body is required. Send Firebase ID token in Authorization: Bearer <token>",
+						properties: {},
 					},
 					AuthLoginResponse: {
 						type: "object",
 						properties: {
-							token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." },
+							user: {
+								type: "object",
+								properties: {
+									id: { type: "string", example: "12" },
+									userName: { type: "string", example: "fifa_master" },
+									firebaseUid: { type: "string", example: "8h4D3rP..." },
+									email: { type: "string", format: "email", example: "user@mail.com" },
+									emailVerified: { type: "boolean", example: true },
+									provider: { type: "string", example: "firebase" },
+								},
+							},
 						},
 					},
 				Tournament: {

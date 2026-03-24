@@ -1,7 +1,7 @@
-import { JwtPayloadModel } from "../models/jwt-payload.model";
+import { AuthenticatedUserModel } from "../models/authenticated-user.model";
 
 declare module "express-serve-static-core" {
     interface Request {
-        user?: JwtPayloadModel;
+        user?: AuthenticatedUserModel;
     }
 }

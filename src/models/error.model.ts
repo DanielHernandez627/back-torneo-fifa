@@ -13,6 +13,7 @@ export interface PostgresLikeError {
 export interface ErrorWithDriver {
     message?: string;
     code?: string;
+    field?: string;
     detail?: string;
     constraint?: string;
     driverError?: PostgresLikeError;

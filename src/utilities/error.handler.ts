@@ -41,6 +41,14 @@ const buildApiError = (errorRaw?: unknown): ApiError => {
         };
     }
 
+    if (typeof error.code === 'string' && error.code.trim() && typeof error.message === 'string' && error.message.trim()) {
+        return {
+            code: error.code,
+            message: error.message,
+            ...(typeof error.field === 'string' && error.field.trim() ? { field: error.field } : {}),
+        };
+    }
+
     if (typeof error.message === 'string' && error.message.trim()) {
         return {
             code: 'APP_ERROR',

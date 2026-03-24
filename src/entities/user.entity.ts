@@ -1,6 +1,4 @@
-import { Exclude } from 'class-transformer';
-import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, BeforeInsert, BeforeUpdate, OneToMany} from 'typeorm';
-import { encrypt } from '../utilities/bycrypt.handler';
+import { Entity, PrimaryGeneratedColumn, UpdateDateColumn, Column, CreateDateColumn, OneToMany} from 'typeorm';
 import { Tournament } from './tournaments.entity';
 
 @Entity({ name: 'users' })
@@ -14,9 +12,14 @@ export class User {
     @Column({ unique: true, type: 'varchar', length: 255 })
     email!: string;
 
-    @Exclude()
-    @Column({ type: 'varchar', length: 255 })
-    password!: string;
+    @Column({ unique: true, type: 'varchar', length: 128, nullable: true })
+    firebaseUid!: string | null;
+
+    @Column({ type: 'varchar', length: 50, nullable: true })
+    provider!: string | null;
+
+    @Column({ type: 'boolean', default: false, name: 'is_verified' })
+    isVerified!: boolean;
 
     @OneToMany(() => Tournament, tournament => tournament.user)
     tournaments!: Tournament[];
@@ -26,13 +29,4 @@ export class User {
 
     @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
     updatedAt!: Date;
-
-    @BeforeInsert()
-    @BeforeUpdate()
-    async hashPassword() {
-        const isAlreadyHashed = this.password.startsWith('$2a$') || this.password.startsWith('$2b$') || this.password.startsWith('$2y$');
-        if (!isAlreadyHashed) {
-            this.password = await encrypt(this.password);
-        }
-    }
 }
